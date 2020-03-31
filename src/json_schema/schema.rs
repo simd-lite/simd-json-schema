@@ -1,12 +1,13 @@
 use super::helpers;
+use super::keywords;
 use super::scope;
 use super::validators;
-use super::keywords;
 
 use phf;
 
 use std::collections;
 
+use simd_json::value::owned::Value as OwnedValue;
 use value_trait::*;
 
 #[derive(Debug)]
@@ -17,7 +18,7 @@ where
     pub id: Option<url::Url>,
     schema: Option<url::Url>,
     // JSON that defines schema
-    source: V,
+    source: OwnedValue,
     tree: collections::BTreeMap<String, Schema<V>>,
     validators: validators::Validators<V>,
     scopes: hashbrown::HashMap<String, Vec<String>>,
@@ -73,6 +74,18 @@ pub struct WalkContext<'walk> {
     pub scopes: &'walk mut hashbrown::HashMap<String, Vec<String>>,
 }
 
+impl<'walk> WalkContext<'walk> {
+    pub fn escaped_fragment(&self) -> String {
+        helpers::connect(
+            self.fragment
+                .iter()
+                .map(|s| s.as_ref())
+                .collect::<Vec<&str>>()
+                .as_ref(),
+        )
+    }
+}
+
 impl<'scope, 'schema, V> ScopedSchema<'scope, 'schema, V>
 where
     V: Value,
@@ -89,27 +102,25 @@ where
 
     pub fn validate(&self, data: &V) -> validators::ValidationState
     where
-        <V as Value>::Key: std::borrow::Borrow<str>
-        + std::convert::AsRef<str>,
+        V: Value + std::fmt::Debug,
+        <V as Value>::Key: std::borrow::Borrow<str> + std::convert::AsRef<str> + std::fmt::Debug,
     {
+        dbg!(data.clone());
         self.schema.validate_in_scope(data, "", &self.scope)
     }
 
     pub fn validate_in(&self, data: &V, path: &str) -> validators::ValidationState
     where
-        <V as Value>::Key: std::borrow::Borrow<str>
-        + std::convert::AsRef<str>,
+        <V as Value>::Key: std::borrow::Borrow<str> + std::convert::AsRef<str> + std::fmt::Debug,
     {
         self.schema.validate_in_scope(data, path, &self.scope)
     }
-
 }
 
 impl<V> Schema<V>
 where
     V: Value,
-    <V as Value>::Key: std::borrow::Borrow<str>
-        + std::convert::AsRef<str>,
+    <V as Value>::Key: std::borrow::Borrow<str> + std::convert::AsRef<str> + std::fmt::Debug,
 {
     fn validate_in_scope(
         &self,
@@ -120,6 +131,7 @@ where
         let mut state = validators::ValidationState::new();
 
         for validator in self.validators.iter() {
+            println!("VALIDATOR");
             state.append(validator.validate(data, path, scope))
         }
 
@@ -151,13 +163,20 @@ where
         Some(schema)
     }
 
-    fn compile(source: V, external_id: Option<url::Url>, settings: CompilationSettings<V>) -> Result<Schema<V>, SchemaError>
+    fn compile(
+        source: OwnedValue,
+        external_id: Option<url::Url>,
+        settings: CompilationSettings<V>,
+    ) -> Result<Schema<V>, SchemaError>
     where
         V: Value + std::convert::From<simd_json::value::owned::Value> + std::clone::Clone,
-        <V as Value>::Key:
-            std::borrow::Borrow<str> + std::convert::AsRef<str> + std::string::ToString + std::fmt::Debug,
+        <V as Value>::Key: std::borrow::Borrow<str>
+            + std::convert::AsRef<str>
+            + std::string::ToString
+            + std::fmt::Debug,
     {
         let source = helpers::convert_boolean_schema(source);
+        dbg!(source.clone());
 
         if !source.is_object() {
             return Err(SchemaError::NotAnObject);
@@ -180,11 +199,12 @@ where
             let mut scopes = hashbrown::HashMap::new();
 
             for (key, val) in obj.iter() {
+                dbg!(key);
                 if !val.is_object() && !val.is_array() && !val.is_bool() {
                     continue;
                 }
 
-                if FINAL_KEYS.contains(&key.as_ref()[..]) {
+                if FINAL_KEYS.contains(&key[..]) {
                     continue;
                 }
 
@@ -195,13 +215,19 @@ where
                     scopes: &mut scopes,
                 };
 
-                let scheme = Schema::compile_sub(val.clone(), &mut context, false)?;
+                let scheme = Schema::compile_sub(
+                    val.clone(),
+                    &mut context,
+                    &settings,
+                    !NON_SCHEMA_KEYS.contains(key.as_str()),
+                )?;
+
+                tree.insert(helpers::encode(key.as_ref()), scheme);
             }
 
             (tree, scopes)
         };
 
-        //let validators = vec![];
         let validators = Schema::compile_keywords(
             source.clone(),
             &WalkContext {
@@ -211,6 +237,7 @@ where
             },
             &settings,
         )?;
+
         let schema = Schema {
             id: Some(id),
             schema,
@@ -224,7 +251,7 @@ where
     }
 
     fn compile_keywords<'key>(
-        source: V,
+        source: OwnedValue,
         context: &WalkContext<'key>,
         settings: &CompilationSettings<V>,
     ) -> Result<validators::Validators<V>, SchemaError>
@@ -245,6 +272,8 @@ where
             .map(|key| key.to_string())
             .collect();
         let mut not_consumed = hashbrown::HashSet::new();
+        dbg!(source.clone());
+        dbg!(keys.clone());
 
         loop {
             let key = keys.iter().next().cloned();
@@ -256,8 +285,7 @@ where
 
                         let is_exclusive_keyword = keyword.keyword.is_exclusive();
 
-                        //if let Some(validator) = keyword.keyword.compile(&source, context)? {
-                        if let Some(validator) = keyword.keyword.compile()? {
+                        if let Some(validator) = keyword.keyword.compile(&source, context)? {
                             if is_exclusive_keyword {
                                 validators = vec![validator];
                             } else {
@@ -281,12 +309,21 @@ where
             }
         }
 
+        if settings.ban_unknown_keywords && !not_consumed.is_empty() {
+            for key in not_consumed.iter() {
+                if !ALLOW_NON_CONSUMED_KEYS.contains(&key[..]) {
+                    return Err(SchemaError::UnknownKey(key.to_string()));
+                }
+            }
+        }
+
         Ok(validators)
     }
 
     fn compile_sub(
-        source: V,
+        source: OwnedValue,
         context: &mut WalkContext<'_>,
+        settings: &CompilationSettings<V>,
         is_schema: bool,
     ) -> Result<Schema<V>, SchemaError>
     where
@@ -320,9 +357,7 @@ where
                         continue;
                     }
 
-                    if !PROPERTY_KEYS.contains(&parent_key[..])
-                        && FINAL_KEYS.contains(&key.as_ref()[..])
-                    {
+                    if !PROPERTY_KEYS.contains(&parent_key[..]) && FINAL_KEYS.contains(&key[..]) {
                         continue;
                     }
 
@@ -330,7 +365,7 @@ where
                     current_fragment.push(key.to_string().clone());
 
                     let is_schema = PROPERTY_KEYS.contains(&parent_key[..])
-                        || !NON_SCHEMA_KEYS.contains(&key.as_ref()[..]);
+                        || !NON_SCHEMA_KEYS.contains(&key[..]);
 
                     let mut context = WalkContext {
                         url: id.as_ref().unwrap_or(context.url),
@@ -338,7 +373,8 @@ where
                         scopes: context.scopes,
                     };
 
-                    let scheme = Schema::compile_sub(val.clone(), &mut context, is_schema)?;
+                    let scheme =
+                        Schema::compile_sub(val.clone(), &mut context, &settings, is_schema)?;
 
                     tree.insert(helpers::encode(key.as_ref()), scheme);
                 }
@@ -366,7 +402,7 @@ where
                         scopes: context.scopes,
                     };
 
-                    let scheme = Schema::compile_sub(val.clone(), &mut context, true)?;
+                    let scheme = Schema::compile_sub(val.clone(), &mut context, settings, true)?;
 
                     tree.insert(idx.to_string().clone(), scheme);
                 }
@@ -380,7 +416,12 @@ where
                 .insert(id.clone().unwrap().into_string(), context.fragment.clone());
         }
 
-        let validators = vec![];
+        let validators = if is_schema && source.is_object() {
+            Schema::compile_keywords(source.clone(), context, settings)?
+        } else {
+            vec![]
+        };
+
         let schema = Schema {
             id: id,
             schema,
@@ -394,10 +435,15 @@ where
     }
 }
 
-pub fn compile<V>(source: V, external_id: Option<url::Url>, settings: CompilationSettings<V>) -> Result<Schema<V>, SchemaError>
+pub fn compile<V>(
+    source: OwnedValue,
+    external_id: Option<url::Url>,
+    settings: CompilationSettings<V>,
+) -> Result<Schema<V>, SchemaError>
 where
     V: Value + std::convert::From<simd_json::value::owned::Value> + std::clone::Clone,
-    <V as Value>::Key: std::borrow::Borrow<str> + std::convert::AsRef<str> + std::fmt::Display + std::fmt::Debug,
+    <V as Value>::Key:
+        std::borrow::Borrow<str> + std::convert::AsRef<str> + std::fmt::Display + std::fmt::Debug,
 {
     Schema::compile(source, external_id, settings)
 }

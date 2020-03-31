@@ -1,12 +1,12 @@
-use super::schema;
-use super::validators;
 use simd_json::value::owned::Value as OwnedValue;
-use url::Url;
 use value_trait::*;
 
-pub struct Ref;
+use super::super::schema;
+use super::super::validators;
 
-impl<V> super::Keyword<V> for Ref
+#[allow(missing_copy_implementations)]
+pub struct Enum;
+impl<V> super::Keyword<V> for Enum
 where
     V: Value
         + std::clone::Clone
@@ -16,6 +16,8 @@ where
         + std::marker::Send
         + std::cmp::PartialEq,
     <V as Value>::Key: std::borrow::Borrow<str>
+        + std::hash::Hash
+        + Eq
         + std::convert::AsRef<str>
         + std::fmt::Debug
         + std::string::ToString
@@ -24,26 +26,28 @@ where
 {
     fn compile(
         &self,
-        src: &OwnedValue,
-        ctx: &schema::WalkContext,
+        def: &OwnedValue,
+        ctx: &schema::WalkContext<'_>,
     ) -> super::KeywordCompilationResult<V> {
-        let ref_ = keyword_key_exists!(src, "$ref");
+        let enum_ = keyword_key_exists!(def, "enum");
 
-        if ref_.is_str() {
-            let url = Url::options()
-                .base_url(Some(ctx.url))
-                .parse(ref_.as_str().unwrap());
-            match url {
-                Ok(url) => Ok(Some(Box::new(validators::Ref { url }))),
-                Err(_) => Err(schema::SchemaError::Malformed {
+        if enum_.is_array() {
+            let enum__ = enum_.as_array().unwrap();
+
+            if enum__.is_empty() {
+                return Err(schema::SchemaError::Malformed {
                     path: ctx.fragment.join("/"),
-                    detail: "The value of $ref must be an URI-encoded JSON Pointer".to_string(),
-                }),
+                    detail: "This array must have at least one element.".to_string(),
+                });
             }
+
+            Ok(Some(Box::new(validators::Enum {
+                items: enum_.clone(),
+            })))
         } else {
             Err(schema::SchemaError::Malformed {
                 path: ctx.fragment.join("/"),
-                detail: "The value of multipleOf must be a string".to_string(),
+                detail: "The value of this keyword must be an array.".to_string(),
             })
         }
     }

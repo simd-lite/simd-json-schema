@@ -1,12 +1,15 @@
+use url;
 use value_trait::*;
 
+use super::error;
 use super::scope;
 
-pub struct Ref {
+#[allow(missing_copy_implementations)]
+pub struct Not {
     pub url: url::Url,
 }
 
-impl<V> super::Validator<V> for Ref
+impl<V> super::Validator<V> for Not
 where
     V: Value
         + std::clone::Clone
@@ -17,19 +20,27 @@ where
         + std::cmp::PartialEq,
     <V as Value>::Key: std::borrow::Borrow<str>
         + std::hash::Hash
+        + Eq
         + std::convert::AsRef<str>
         + std::fmt::Debug
-        + std::string::ToString,
+        + std::string::ToString
+        + std::marker::Sync
+        + std::marker::Send,
 {
     fn validate(&self, val: &V, path: &str, scope: &scope::Scope<V>) -> super::ValidationState {
         let schema = scope.resolve(&self.url);
+        let mut state = super::ValidationState::new();
 
         if schema.is_some() {
-            schema.unwrap().validate_in(val, path)
+            if schema.unwrap().validate_in(val, path).is_valid() {
+                state.errors.push(Box::new(error::Not {
+                    path: path.to_string(),
+                }))
+            }
         } else {
-            let mut state = super::ValidationState::new();
             state.missing.push(self.url.clone());
-            state
         }
+
+        state
     }
 }

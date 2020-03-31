@@ -12,6 +12,10 @@ url = { version = "2.1" }
 percent-encoding = { version = "2.1" }
 uuid = { version = "0.8", features = ["v4"]}
 phf = { version = "0.7" }
+chrono = "*"
+publicsuffix = { version = "1.5.4", default-features = false }
+regex = { version = "1.3" }
+
 
 [build-dependencies.phf_codegen]
 version = "0.7"

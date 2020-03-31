@@ -6,3 +6,4 @@ pub mod primitive_types;
 pub mod schema;
 pub mod scope;
 pub mod validators;
+pub mod builder;

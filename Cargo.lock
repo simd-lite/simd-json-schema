@@ -19,6 +19,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "argonaut"
+version = "0.1.0"
+dependencies = [
+ "halfbrown",
+ "simd-json",
+ "value-trait",
+]
+
+[[package]]
 name = "autocfg"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -520,6 +529,7 @@ dependencies = [
 name = "simd-json-schema"
 version = "0.1.0"
 dependencies = [
+ "argonaut",
  "chrono",
  "hashbrown",
  "percent-encoding",
@@ -527,6 +537,7 @@ dependencies = [
  "phf_codegen",
  "publicsuffix",
  "regex",
+ "serde",
  "simd-json",
  "url",
  "uuid",

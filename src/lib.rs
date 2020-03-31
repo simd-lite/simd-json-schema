@@ -1,4 +1,6 @@
 pub mod json_schema;
+pub mod json_dsl;
+pub mod common;
 
 #[cfg(test)]
 mod tests {

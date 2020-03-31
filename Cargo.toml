@@ -5,6 +5,7 @@ authors = ["Ernad Halilovic <ernadh@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+serde = { version = "1" }
 simd-json = { version = "0.3.*" }
 value-trait = "0.1.3"
 hashbrown = { version = "0.7" }
@@ -15,6 +16,7 @@ phf = { version = "0.7" }
 chrono = "*"
 publicsuffix = { version = "1.5.4", default-features = false }
 regex = { version = "1.3" }
+argonaut = { path = "/Users/eh356e/sandbox/argonaut" }
 
 
 [build-dependencies.phf_codegen]

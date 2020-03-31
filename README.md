@@ -24,7 +24,7 @@ We use [SemVer](http://semver.org/) for versioning. For the versions available, 
 
 * **Ernad Halilovic** - [ernadh](https://github.com/ernadh)
 
-Hat tip to [valico](https://github.com/rustless/valico) for doing work that formed the base for this validator.
+Hat tip to [avro-rs](https://github.com/flavray/avro-rs) and [valico](https://github.com/rustless/valico) for doing work that formed the base for this validator.
 
 ## License
 
